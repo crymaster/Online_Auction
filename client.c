@@ -9,11 +9,24 @@
 #include <fcntl.h>
 #include <pthread.h>
 
+#define CMD_REGISTER 0
+#define CMD_SIGNIN   1
+#define CMD_JOIN     2
+#define CMD_GETINFO  3
+#define CMD_BID      4
+
 void menu();
 void option1();
 void option2();
 
-int sockfd; //Client socket file descriptor
+int sockfd; //socket of server file descriptor
+
+typedef struct{
+    char name[40];
+    char password[50];
+}User;
+
+User user;
 
 int main(){
     int     retval;
@@ -64,7 +77,31 @@ void menu(){
 }
 
 void option1(){
+    int command;        //Variable to receive command from client
 }
 
 void option2(){
+    int command;        //Variable to receive command from client
+    char password[50];
+    command = 0;
+    while(1){
+        printf("New Username:");    scanf("%s",user.name);
+        printf("Password:");        scanf("%s",user.password);
+        printf("Password Confirmation:");   scanf("%s",password);
+        if(strcmp(user.password,password)!=0){
+            printf("Password and confirmation do not match.\n");
+        } else {
+            command = CMD_REGISTER;
+            write(sockfd,&command,sizeof(int));
+            write(sockfd,&user,sizeof(User));
+            read(sockfd,&command,sizeof(int));
+            if(command != CMD_REGISTER){
+                printf("Username already existed. Please reenter!\n");
+            } else {
+                printf("Register successfully!\n");
+                break;
+            }
+        }
+    }
+    
 }

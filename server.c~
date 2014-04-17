@@ -8,6 +8,12 @@
 #include<string.h>
 #include<ctype.h>
 
+#define CMD_REGISTER 0
+#define CMD_SIGNIN   1
+#define CMD_JOIN     2
+#define CMD_GETINFO  3
+#define CMD_BID      4
+
 void enterGoods();
 
 struct Goods_{
@@ -15,6 +21,11 @@ struct Goods_{
     int  init_price;
     int  min_incr;
 };
+
+typedef struct{
+    char name[40];
+    char password[50];
+}User;
 
 typedef struct Goods_ Goods;
 
@@ -24,9 +35,11 @@ int main(){
     int server_sockfd;  //Server socket descriptor
     int client_sockfd;  //Client socket descriptor
     int i,j;
+    int command;        //Variable to receive command from client
     int byte_count;     //Number of bytes in the received queue
     int retval;     //return value
     int countdown = 60; //timeout countdown
+    User user;
     fd_set  readfds;    //read file descriptor list
     fd_set  allfds;     ///all file descriptor list
     struct sockaddr_in server_address;  //Server address and port
@@ -115,9 +128,17 @@ int main(){
                             //    client[j] = -1;
                             break;
                         }
+                    } else {
+                        //Read command variable from client
+                        printf("Received %d\n",i);
+                        read(i,&command,sizeof(int));
+                        printf("%d\n",command);
+                        read(i,&user,sizeof(User));
+                        if(command == CMD_REGISTER){
+                            write(i,CMD_REGISTER,sizeof(int));
+                        }
                     }	
                 }
-             
             }
         }
     }
