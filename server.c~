@@ -1,5 +1,6 @@
 #include<sys/socket.h>
 #include<stdio.h>
+#include<stdlib.h>
 #include<netinet/in.h>
 #include<sys/types.h>
 #include<sys/time.h>
@@ -8,13 +9,16 @@
 #include<string.h>
 #include<ctype.h>
 
-#define CMD_REGISTER 0
-#define CMD_SIGNIN   1
-#define CMD_JOIN     2
-#define CMD_GETINFO  3
-#define CMD_BID      4
-
-void enterGoods();
+#define CMD_EXCEPTION -1
+#define CMD_REGISTER   0
+#define CMD_SIGNIN     1
+#define CMD_JOIN       2
+#define CMD_GETINFO    3
+#define CMD_BID        4
+#define CMD_SIGNOUT    5
+#define STT_OFFLINE    0
+#define STT_ONLINE     1
+#define STT_BIDDING    2
 
 struct Goods_{
     char name[50];
@@ -25,21 +29,31 @@ struct Goods_{
 typedef struct{
     char name[40];
     char password[50];
+    int  status;        //0:offline, 1:online, 2:bidding
 }User;
 
 typedef struct Goods_ Goods;
 
+void enterGoods();
+int registerUser(User* user);
+User* getUserByName(char *name);
+char* getGoodsinfo();
+int authenticate(User *user);
+char* itoa(int a);
+
 Goods goods;    //Goods to auction
+User *users;
 
 int main(){
     int server_sockfd;  //Server socket descriptor
     int client_sockfd;  //Client socket descriptor
-    int i,j;
+    int i;
     int command;        //Variable to receive command from client
     int byte_count;     //Number of bytes in the received queue
-    int retval;     //return value
+    int retval;         //return value
     int countdown = 60; //timeout countdown
-    User user;
+    int user_online = 0;  //number of user online
+    User *user;
     fd_set  readfds;    //read file descriptor list
     fd_set  allfds;     ///all file descriptor list
     struct sockaddr_in server_address;  //Server address and port
@@ -68,6 +82,12 @@ int main(){
     }
     //Enter detail of the goods that will be auctioned
     enterGoods();
+    users = (User*)malloc(sizeof(User)*FD_SETSIZE);
+    for(i = 0; i<FD_SETSIZE; i++){
+        strcpy(users[i].name,"");
+        strcpy(users[i].password,"");
+        users[i].status = STT_OFFLINE;
+    }
     do{
         printf("\n*****Press Enter to begin the auction*****\n");
     }
@@ -123,19 +143,64 @@ int main(){
                         close(i);
                         FD_CLR(i,&allfds);
                         printf("Client %d closed\n",i);
-                        for (j = 0; j < FD_SETSIZE; j++){
-                            //if (client[j] == i) {
-                            //    client[j] = -1;
-                            break;
+                        //If user is logged in, remove from array
+                        if(strcmp(users[i].name,"")!=0){
+                            strcpy(users[i].name,"");
+                            strcpy(users[i].password,"");
+                            users[i].status = STT_OFFLINE;
+                            printf("Client: %d  Name:%s has logged out\n",i,users[i].name);                        
+                            user_online--;
                         }
                     } else {
                         //Read command variable from client
-                        printf("Received %d\n",i);
                         read(i,&command,sizeof(int));
-                        printf("%d\n",command);
-                        read(i,&user,sizeof(User));
+                        //Register New User Process
                         if(command == CMD_REGISTER){
-                            write(i,CMD_REGISTER,sizeof(int));
+                            user = (User*)malloc(sizeof(User));
+                            read(i,user,sizeof(User));
+                            if(registerUser(user)!=1){
+                                command = CMD_EXCEPTION;
+                            } else {
+                                strcpy(users[i].name,user->name);
+                                strcpy(users[i].password,user->password);
+                                users[i].status = STT_ONLINE;
+                                printf("Client: %d  Name:%s has logged in\n",i,users[i].name);
+                                command = CMD_REGISTER;
+                                user_online++;
+                            }
+                            write(i,&command,sizeof(int));
+                        } else if(command == CMD_SIGNIN){
+                            user = (User*)malloc(sizeof(User));
+                            read(i,user,sizeof(User));
+                            if(authenticate(user)!=1){
+                                command = CMD_EXCEPTION;
+                            } else {
+                                strcpy(users[i].name,user->name);
+                                strcpy(users[i].password,user->password);
+                                users[i].status = STT_ONLINE;
+                                command = CMD_SIGNIN;
+                                printf("Client: %d  Name:%s has logged in\n",i,users[i].name);                                
+                                user_online++;
+                            }
+                            write(i,&command,sizeof(int));
+                        } else if(command == CMD_GETINFO){
+                            write(i,getGoodsinfo(),sizeof(char)*100);
+                        } else if(command == CMD_SIGNOUT){
+                            strcpy(users[i].name,"");
+                            strcpy(users[i].password,"");
+                            users[i].status = STT_OFFLINE;
+                            printf("Client: %d  Name:%s has logged out\n",i,users[i].name);
+                            user_online--;
+                        } else if(command == CMD_JOIN){
+                            users[i].status = STT_BIDDING;
+                            command = CMD_JOIN;
+                            write(i,&command,sizeof(int));
+                            write(i,getGoodsinfo(),sizeof(char)*100);
+                            char line[100] = "A client has bid\n";
+                            broadcast(line);
+                        } else if(command == CMD_BID){
+                            char line[100] = "A client has bid\n";
+                            broadcast(line);
                         }
                     }	
                 }
@@ -156,4 +221,91 @@ void enterGoods(){
     for(i=0; i<FD_SETSIZE; i++){
     //    clients[i] = -1;
     }   
+}
+
+int registerUser(User* user){
+    FILE *file;
+    if(getUserByName(user->name) != NULL){
+        return 0;
+    }
+    if((file = fopen("users.txt","a"))==NULL)  {
+        printf("Error opening file!\n");
+        return -1;
+    }
+    fprintf(file,"%s\t%s\n",user->name,user->password);
+    fclose(file);
+    return 1;
+}
+
+int authenticate(User *user){
+    User* temp;
+    temp = getUserByName(user->name);
+    if(temp==NULL)  return 0;
+    if(strcmp(user->password,temp->password)==0)    return 1;
+    return 0;
+}
+
+void broadcast(char* str){
+    int i;
+    for(i = 0; i<FD_SETSIZE; i++){
+        if(users[i].status == 2){
+            write(i,str,sizeof(str));
+        }
+    }
+}
+
+User* getUserByName(char *name){
+    FILE *file;
+    User* user;
+    if((file = fopen("users.txt","r"))==NULL)  {
+        printf("Error opening file!\n");
+        return NULL;
+    }
+    user = (User*)malloc(sizeof(User));
+    while(fscanf(file,"%s %s",user->name,user->password)!= EOF){
+        if(strcmp(user->name,name)==0){
+            return user;
+        }
+    }
+    fclose(file);
+    return NULL;
+}
+
+char* getGoodsinfo(){
+    char line[100];
+    strcpy(line,"Goods: ");
+    strcat(line,goods.name);
+    strcat(line,"\nInitial Price: ");
+    strcat(line,itoa(goods.init_price));
+    strcat(line,"\nStep Size: ");
+    strcat(line,itoa(goods.min_incr));
+    strcat(line,"\n");
+    return  strdup(line);
+}
+
+char* itoa(int a){
+    char *str;
+    char temp;
+    int digit;
+    int i;
+    int n = 0;
+    str = (char*)malloc(sizeof(char)*15);
+    if(a == 0){
+        str[0] = '0';
+        str[1] = 0;
+        return str;
+    }
+    while(a>0){
+        digit = a%10;
+        a /= 10;
+        str[n] = digit+'0';
+        n++;
+    }
+    str[n] = 0;
+    for(i = 0; i<n/2 ; i++){
+        temp = str[i];
+        str[i] = str[n-1-i];
+        str[n-1-i] = temp;
+    }
+    return str;
 }
