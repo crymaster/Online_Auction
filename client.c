@@ -11,13 +11,17 @@
 #include <fcntl.h>
 #include <pthread.h>
 
-#define CMD_REGISTER 0
-#define CMD_SIGNIN   1
-#define CMD_JOIN     2
-#define CMD_GETINFO  3
-#define CMD_BID      4
-#define CMD_SIGNOUT  5
-#define STDIN        0
+#define SIG_LOWBID    -4
+#define SIG_NEM       -3
+#define SIG_ALI       -2
+#define SIG_EXCEPTION -1
+#define CMD_REGISTER   0
+#define CMD_SIGNIN     1
+#define CMD_JOIN       2
+#define CMD_GETINFO    3
+#define CMD_BID        4
+#define CMD_SIGNOUT    5
+#define STDIN          0
 
 void menu();
 int menu1_option1();
@@ -31,9 +35,11 @@ int sockfd; //socket of server file descriptor
 typedef struct{
     char name[40];
     char password[50];
+    int  balance;
 }User;
 
 User user;
+int  price;
 
 int main(){
     int     retval;
@@ -101,6 +107,8 @@ void menu(int type){
         printf("3. Exit\n");
         printf("Option: ");
     } else if(type == 2){
+        printf("\nHello! %s\n",user.name);
+        printf("Your balance is %d USD\n", user.balance);
         printf("1. Get Goods info\n");
         printf("2. Join Auction\n");
         printf("3. Log Out\n");
@@ -108,30 +116,39 @@ void menu(int type){
     }
 }
 
-int menu1_option1(){
+int menu1_option1(){    //Sign in
     int command;        //Variable to receive command from client
     User temp;
+    char line[100];
     printf("Username:");    scanf("%s",temp.name);
     printf("Password:");    scanf("%s",temp.password);
     command = CMD_SIGNIN;
     write(sockfd,&command,sizeof(int));
     write(sockfd,&temp,sizeof(User));
     read(sockfd,&command,sizeof(int));
-    if(command != CMD_SIGNIN){
+    if(command == SIG_EXCEPTION){
         printf("Incorrect username or password.\n");
         return 0;
+    } else if(command == SIG_ALI){
+        printf("Username %s already logged in!\n",temp.name);
+        return 0;
     } else {
-        printf("\nHello! %s\n",temp.name);
+        //receive balance of user    
+        read(sockfd,&user.balance,sizeof(int));
+        printf("Goods for auction at the moment:\n");
+        read(sockfd,line,sizeof(char)*100);
+        printf("%s",line);
         strcpy(user.name,temp.name);
         strcpy(user.password,temp.password);
     }
     return 1;
 }
 
-int menu1_option2(){
+int menu1_option2(){    //Sign up
     int command;        //Variable to receive command from client
     User temp;
     char password[50];
+    char line[100];
     while(1){
         printf("New Username:");    scanf("%s",temp.name);
         if(strcmp(temp.name,"")==0){
@@ -158,13 +175,19 @@ int menu1_option2(){
         return 0;
     } else {
         printf("Register successfully!\n");
+        printf("\nHello! %s\n",temp.name);
+        printf("Goods for auction at the moment:\n");
+        //receive balance of user
+        read(sockfd,&user.balance,sizeof(int));
+        read(sockfd,line,sizeof(char)*100);
+        printf("%s\n",line);        
         strcpy(user.name,temp.name);
         strcpy(user.password,temp.password);
     }
     return 1;
 }
 
-int menu2_option1(){
+int menu2_option1(){    //Get goods info
     char line[100];
     int command;
     command = CMD_GETINFO;
@@ -174,28 +197,37 @@ int menu2_option1(){
     return 1;
 }
 
-int menu2_option2(){
+int menu2_option2(){    //Join auction
     int command;
     char choice;
     char line[100];
+    char buffer[200] = "";  //buffer for stdin
     int  retval;
     int  byte_count;
+    int  bid_money;
+    int  n;
     fd_set allfds;
     fd_set readfds;
     command = CMD_JOIN;
     printf("You can't quit once you join the auction. Do you want to join?\n");
     printf("Join(1)/Cancel(any key)?:");    scanf("%c",&choice);
     if(choice == '1'){
-        write(sockfd,&command,sizeof(int));
-        printf("Joining\n");
-        read(sockfd,&command,sizeof(int));
-        read(sockfd,line,sizeof(line));
-        printf("%s",line);
+        //Initiate read file descriptor
         FD_ZERO(&readfds);
         FD_ZERO(&allfds);
         FD_SET(sockfd,&allfds);
         FD_SET(STDIN,&allfds);
-        printf("Bid: ");
+        //Send command, receive, price and goods infor
+        write(sockfd,&command,sizeof(int));
+        printf("Joining\n");
+        read(sockfd,&command,sizeof(int));
+        read(sockfd,&price,sizeof(int));
+        read(sockfd,line,sizeof(line));
+        printf("%s",line);
+        read(sockfd,line,sizeof(line));
+        printf("%s",line);
+        strcpy(line,"");
+        printf("Bid: \n");
         while(1){
             readfds = allfds;
             retval = select(FD_SETSIZE,&readfds,NULL,NULL,NULL);
@@ -203,22 +235,36 @@ int menu2_option2(){
                 perror("select() error\n");
                 return -1;
             }
+            //Activity triggered by server
             if(FD_ISSET(sockfd,&readfds)){
                 ioctl(sockfd,FIONREAD,&byte_count);
                 if(byte_count==0){
                     printf("Connection lost!\n");
                     exit(1);
                 } else {
-                    strcpy(line,"");
-                    read(sockfd,line,sizeof(line));
+                    read(sockfd,line,sizeof(char)*100);
                     printf("%s",line);
-                    printf("Bid: ");
+                    printf("Bid: \n");
                 }
+              //Activity triggered by stdin
             } else if(FD_ISSET(STDIN,&readfds)){
-                getchar();
-                command = CMD_BID;
-                printf("1\n");
-//                write(sockfd,&command,sizeof(int));
+                if ((n = read(STDIN, buffer, sizeof(char)*200)) != 0) {
+                    bid_money = atoi(buffer);
+                    if(bid_money==0){
+                        printf("Please enter a valid number\n");
+                    } else {
+                        command = CMD_BID;
+                        write(sockfd,&command,sizeof(int));
+                        write(sockfd,&bid_money,sizeof(int));
+                        read(sockfd,&command,sizeof(int));
+                        if(command == SIG_NEM){
+                            printf("Your bidding money exceeds your balance\n");
+                        } else if(command == SIG_LOWBID){
+                            printf("Your bidding money is lower than current price + minimum increment\n");
+                        }
+                    }
+                    printf("Bid:\n");
+                }
             }
             
         }
@@ -226,7 +272,7 @@ int menu2_option2(){
     return 1;
 }
 
-int menu2_option3(){
+int menu2_option3(){    //Sign out
     int command;
     command = CMD_SIGNOUT;
     printf("%s has logged out!\n",user.name);
