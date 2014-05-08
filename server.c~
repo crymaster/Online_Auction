@@ -19,6 +19,9 @@
 #define CMD_GETINFO    3
 #define CMD_BID        4
 #define CMD_SIGNOUT    5
+#define CMD_SIGNOUT    5
+#define CMD_END        6
+#define CMD_WINNER     7
 #define STT_OFFLINE    0
 #define STT_ONLINE     1
 #define STT_BIDDING    2
@@ -47,8 +50,11 @@ int registerUser(User* user);
 User* getUserByName(char *name);
 char* getGoodsinfo();
 void broadcast(char* str);
+void broadcastEnd(int winner);
 int authenticate(User *user);
 int isLoggedIn(char* name);
+int updateUser(User user);
+int writeLog(char *name, char* goods, int price);
 
 Goods goods;    //Goods to auction
 User *users;
@@ -158,10 +164,19 @@ int main(){
                     sprintf(line,"%d USD 2nd time\n",logging[log_number-1].bid_money);
                     broadcast(line);
                 } else if(auction_state == 4){
+                    auction_state = 0;
                     sprintf(line,"%s win %s with %d USD\n",users[logging[log_number-1].client].name, goods.name,logging[log_number-1].bid_money);
                     broadcast(line);
+                    //Update user balance and log
+                    User winner = users[logging[log_number-1].client];
+                    winner.balance -= logging[log_number-1].bid_money;
+                    updateUser(winner);
+                    writeLog(winner.name,goods.name,goods.cur_price);
+                    //Inform end of this auction
+                    broadcastEnd(logging[log_number-1].client);
+                    write(logging[log_number-1].client,&winner.balance,sizeof(int));
                 } else {
-                    return 0;
+                    //return 0;
                 }
             }   
             //Reset timeout value cause it turns 0 after timeout
@@ -356,6 +371,27 @@ void broadcast(char* str){
     }
 }
 
+void broadcastEnd(int winner){
+    int i;
+    int command = CMD_END;
+    char line[100];
+    sprintf(line,"%d",command);
+    for(i = 0; i<FD_SETSIZE; i++){
+        if(users[i].status == 2){
+            if(i!=winner){
+                write(i,line,sizeof(char)*100);
+            }
+            else{
+                command = CMD_WINNER;
+                sprintf(line,"%d",command);
+                write(i,line,sizeof(char)*100);
+                command = CMD_END;
+                sprintf(line,"%d",command);
+            }
+        }
+    }
+}
+
 User* getUserByName(char *name){
     FILE *file;
     User* user;
@@ -371,6 +407,44 @@ User* getUserByName(char *name){
     }
     fclose(file);
     return NULL;
+}
+
+int updateUser(User user){
+    FILE *file;
+    User temp[100];
+    int n = 0;
+    int i;
+    if((file = fopen("users.txt","r"))==NULL)  {
+        printf("Error opening file!\n");
+        return 0;
+    }
+    while(fscanf(file,"%s %s %d",temp[n].name,temp[n].password,&temp[n].balance)!= EOF){
+        if(strcmp(user.name,temp[n].name)==0){
+            temp[n].balance = user.balance;
+        }
+        n++;
+    }
+    fclose(file);
+    if((file = fopen("users.txt","w"))==NULL)  {
+        printf("Error opening file!\n");
+        return 0;
+    }
+    for(i = 0; i<n; i++){
+        fprintf(file,"%s\t%s\t%d\n",temp[i].name,temp[i].password,temp[i].balance);
+    }
+    fclose(file);
+    return 1;
+}
+
+int writeLog(char *name, char* goods, int price){
+    FILE *file;
+    if((file = fopen("log.txt","a"))==NULL)  {
+        printf("Error opening file!\n");
+        return 0;
+    }
+    fprintf(file,"%s\t%s\t%d\n",name,goods,price);
+    fclose(file);
+    return 1;
 }
 
 int isLoggedIn(char* name){

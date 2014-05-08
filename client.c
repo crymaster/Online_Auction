@@ -21,6 +21,8 @@
 #define CMD_GETINFO    3
 #define CMD_BID        4
 #define CMD_SIGNOUT    5
+#define CMD_END        6
+#define CMD_WINNER     7
 #define STDIN          0
 
 void menu();
@@ -243,7 +245,20 @@ int menu2_option2(){    //Join auction
                     exit(1);
                 } else {
                     read(sockfd,line,sizeof(char)*100);
-                    printf("%s",line);
+                    if(strlen(line) > 1){
+                        printf("%s",line);
+                    } else{
+                        command = atoi(line);
+                        printf("%d",command);
+                        if(command == CMD_END){
+                            printf("End of auction\n");
+                            break;
+                        } else if(command == CMD_WINNER){
+                            read(sockfd,&user.balance,sizeof(int));
+                            printf("End of auction\n");
+                            break;
+                        }
+                    }
                     printf("Bid: \n");
                 }
               //Activity triggered by stdin

@@ -1,0 +1,7 @@
+son	1	100
+son	1	10
+son	1	100
+son	1	100
+son	1	2
+son	1	19
+son	1	20
