@@ -4,11 +4,14 @@
 #include<netinet/in.h>
 #include<sys/types.h>
 #include<sys/time.h>
+#include<time.h>
 #include<sys/ioctl.h>
 #include<unistd.h>
 #include<string.h>
 #include<ctype.h>
 
+#define SIG_FAIL      -6
+#define SIG_SUCCESS   -5
 #define SIG_LOWBID    -4    //Bidding money lower than current price + min increment
 #define SIG_NEM       -3    //Not enough money
 #define SIG_ALI       -2    //Already logged in
@@ -16,12 +19,13 @@
 #define CMD_REGISTER   0
 #define CMD_SIGNIN     1
 #define CMD_JOIN       2
-#define CMD_GETINFO    3
+#define CMD_HISTORY    3
 #define CMD_BID        4
 #define CMD_SIGNOUT    5
 #define CMD_SIGNOUT    5
 #define CMD_END        6
 #define CMD_WINNER     7
+#define CMD_DEPOSIT    8
 #define STT_OFFLINE    0
 #define STT_ONLINE     1
 #define STT_BIDDING    2
@@ -49,12 +53,15 @@ void enterGoods();
 int registerUser(User* user);
 User* getUserByName(char *name);
 char* getGoodsinfo();
+char* getHistory(char* user_name);
 void broadcast(char* str);
 void broadcastEnd(int winner);
 int authenticate(User *user);
 int isLoggedIn(char* name);
 int updateUser(User user);
-int writeLog(char *name, char* goods, int price);
+int writeLog(char *name, char* goods, int price,char* datetime);
+char* replace(char* str,char old, char new);
+int deposit(User user,char* serial);
 
 Goods goods;    //Goods to auction
 User *users;
@@ -171,12 +178,14 @@ int main(){
                     User winner = users[logging[log_number-1].client];
                     winner.balance -= logging[log_number-1].bid_money;
                     updateUser(winner);
-                    writeLog(winner.name,goods.name,goods.cur_price);
+                    time_t now;
+                    time(&now);
+                    writeLog(winner.name,goods.name,goods.cur_price,replace(ctime(&now),' ','.'));
                     //Inform end of this auction
                     broadcastEnd(logging[log_number-1].client);
                     write(logging[log_number-1].client,&winner.balance,sizeof(int));
                 } else {
-                    //return 0;
+                    return 0;
                 }
             }   
             //Reset timeout value cause it turns 0 after timeout
@@ -218,7 +227,7 @@ int main(){
                         //Read command variable from client
                         read(i,&command,sizeof(int));
                         /****Register New User Process****/
-                        if(command == CMD_REGISTER){    
+                        if(command == CMD_REGISTER){
                             user = (User*)malloc(sizeof(User));
                             read(i,user,sizeof(User));
                             if(registerUser(user)!=1){
@@ -263,14 +272,14 @@ int main(){
                                 write(i,&users[i].balance,sizeof(int)); //send balance
                                 write(i,getGoodsinfo(),sizeof(char)*100);   //send good info
                             }
-                        /***********Get info*********/    
-                        } else if(command == CMD_GETINFO){
-                            write(i,getGoodsinfo(),sizeof(char)*100);
+                        /***********Get History*********/    
+                        } else if(command == CMD_HISTORY){
+                            write(i,getHistory(users[i].name),sizeof(char)*300);
                         } else if(command == CMD_SIGNOUT){
+                            printf("Name:%s has logged out\n",users[i].name);
                             strcpy(users[i].name,"");
                             strcpy(users[i].password,"");
-                            users[i].status = STT_OFFLINE;
-                            printf("Name:%s has logged out\n",users[i].name);
+                            users[i].status = STT_OFFLINE;                        
                             user_online--;
                             printf("Online : %d users\n",user_online);
                         /**********Join auction*******/    
@@ -293,7 +302,7 @@ int main(){
                             write(i,&goods.cur_price,sizeof(int));
                             write(i,getGoodsinfo(),sizeof(char)*100);
                             write(i,line,sizeof(char)*100);
-                        /*************Bidding************/    
+                        /*************Bidding************/
                         } else if(command == CMD_BID){
                             read(i,&bid_money,sizeof(int));
                             if(bid_money > users[i].balance){
@@ -317,7 +326,22 @@ int main(){
                                 command = SIG_LOWBID;
                                 write(i,&command,sizeof(int));
                             }
-                        }
+                        //Add money to balance by searching for serial
+                        } else if(command == CMD_DEPOSIT){
+                            char serial[100];
+                            int money;
+                            read(i,serial,sizeof(char)*100);
+                            money = deposit(users[i],serial);
+                            if(money>0){
+                                command = SIG_SUCCESS;
+                                users[i].balance += money;
+                                write(i,&command,sizeof(int));
+                                write(i,&money,sizeof(int));
+                            } else {
+                                command = SIG_FAIL;
+                                write(i,&command,sizeof(int));
+                            }
+                        }    
                     }	
                 }
             }
@@ -436,15 +460,39 @@ int updateUser(User user){
     return 1;
 }
 
-int writeLog(char *name, char* goods, int price){
+int writeLog(char *name, char* goods, int price,char* datetime){
     FILE *file;
     if((file = fopen("log.txt","a"))==NULL)  {
         printf("Error opening file!\n");
         return 0;
     }
-    fprintf(file,"%s\t%s\t%d\n",name,goods,price);
+    fprintf(file,"%s\t%s\t%d\t%s",name,goods,price,datetime);
     fclose(file);
     return 1;
+}
+
+int deposit(User user,char* serial){
+    FILE *file;
+    char str[100];
+    int flag = 0;
+    int money = 0;
+    if((file = fopen("serial.txt","r"))==NULL)  {
+        printf("Error opening file!\n");
+        return 0;
+    }
+    while(fscanf(file,"%s %d",str,&money)!= EOF){
+        if(strcmp(serial,str)==0){
+            flag = 1;
+            break;
+        }
+    }
+    fclose(file);
+    if(!flag){
+        return 0;
+    }
+    user.balance += money;
+    
+    return money;
 }
 
 int isLoggedIn(char* name){
@@ -460,4 +508,41 @@ char* getGoodsinfo(){
     char line[100];
     sprintf(line,"Goods: %s\nInitial Price: %d USD\nCurrent Price: %d USD\nStep Size: %d USD\n",goods.name,goods.init_price,goods.cur_price,goods.min_incr);
     return  strdup(line);
+}
+
+char* getHistory(char* user_name){
+    char history[300];
+    char line[100];
+    char name[40];
+    char goods_name[50];
+    char price[10];
+    char* datetime = (char*)malloc(sizeof(char)*30);
+    FILE *file;
+    if((file = fopen("log.txt","r"))==NULL)  {
+        printf("Error opening file!\n");
+        return NULL;
+    }
+    sprintf(history,"Goods                         \tPrice     \tDate&Time\n");
+    while(fscanf(file,"%s %s %s %s",name,goods_name,price,datetime)!= EOF){
+        if(strcmp(name,user_name)==0){
+            datetime = replace(datetime,'.',' ');
+            strcat(price," USD");
+            sprintf(line,"%-30s\t%-10s\t%s\n",goods_name,price,datetime);
+            strcat(history,line);
+        }
+    }
+    fclose(file);
+    return strdup(history);
+}
+
+char* replace(char* str,char old, char new){
+    int n = strlen(str);
+    int i;
+    char* str1 = strdup(str);
+    for(i=0; i<n; i++){
+        if(str1[i]==old){
+            str1[i] = new;
+        }
+    }
+    return str1;
 }

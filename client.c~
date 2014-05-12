@@ -11,6 +11,8 @@
 #include <fcntl.h>
 #include <pthread.h>
 
+#define SIG_FAIL      -6
+#define SIG_SUCCESS   -5
 #define SIG_LOWBID    -4
 #define SIG_NEM       -3
 #define SIG_ALI       -2
@@ -18,19 +20,21 @@
 #define CMD_REGISTER   0
 #define CMD_SIGNIN     1
 #define CMD_JOIN       2
-#define CMD_GETINFO    3
+#define CMD_HISTORY    3
 #define CMD_BID        4
 #define CMD_SIGNOUT    5
 #define CMD_END        6
 #define CMD_WINNER     7
+#define CMD_DEPOSIT    8
 #define STDIN          0
 
 void menu();
-int menu1_option1();
-int menu1_option2();
-int menu2_option1();
-int menu2_option2();
-int menu2_option3();
+int menu1_option1();    //Sign in
+int menu1_option2();    //Sign up
+int menu2_option1();    //Get History
+int menu2_option2();    //Join auction
+int menu2_option3();    //Deposit money
+int menu2_option4();    //Sign out
 
 int sockfd; //socket of server file descriptor
 
@@ -91,9 +95,17 @@ int main(){
                     close(sockfd);
                     return 0;
                 } else {
-                    if(menu2_option3())
-                        menu_type = 1;
+                    menu2_option3();
                 }
+                break;
+            case 4:
+                if(menu_type==2){
+                    if(menu2_option4()){
+                        menu_type = 1;
+                    }
+                }
+                else
+                    printf("Please enter a valid option\n");
                 break;
             default:
                 printf("Please enter a valid option\n");
@@ -104,16 +116,17 @@ int main(){
 
 void menu(int type){
     if(type==1){
-        printf("1. Sign In\n");
+        printf("\n1. Sign In\n");
         printf("2. Sign Up\n");
         printf("3. Exit\n");
         printf("Option: ");
     } else if(type == 2){
         printf("\nHello! %s\n",user.name);
         printf("Your balance is %d USD\n", user.balance);
-        printf("1. Get Goods info\n");
+        printf("1. History\n");
         printf("2. Join Auction\n");
-        printf("3. Log Out\n");
+        printf("3. Deposit money\n");
+        printf("4. Log Out\n");
         printf("Option: ");
     }
 }
@@ -137,7 +150,7 @@ int menu1_option1(){    //Sign in
     } else {
         //receive balance of user    
         read(sockfd,&user.balance,sizeof(int));
-        printf("Goods for auction at the moment:\n");
+        printf("\nGoods for auction at the moment:\n");
         read(sockfd,line,sizeof(char)*100);
         printf("%s",line);
         strcpy(user.name,temp.name);
@@ -189,12 +202,12 @@ int menu1_option2(){    //Sign up
     return 1;
 }
 
-int menu2_option1(){    //Get goods info
-    char line[100];
+int menu2_option1(){    //Get History
+    char line[300];
     int command;
-    command = CMD_GETINFO;
+    command = CMD_HISTORY;
     write(sockfd,&command,sizeof(int));
-    read(sockfd,line,sizeof(char)*100);
+    read(sockfd,line,sizeof(char)*300);
     printf("%s\n",line);
     return 1;
 }
@@ -249,7 +262,6 @@ int menu2_option2(){    //Join auction
                         printf("%s",line);
                     } else{
                         command = atoi(line);
-                        printf("%d",command);
                         if(command == CMD_END){
                             printf("End of auction\n");
                             break;
@@ -287,7 +299,27 @@ int menu2_option2(){    //Join auction
     return 1;
 }
 
-int menu2_option3(){    //Sign out
+int menu2_option3(){
+    char serial[100];
+    int command;
+    int money;
+    printf("Enter serial ID:");
+    scanf("%s",serial);
+    command = CMD_DEPOSIT;
+    write(sockfd,&command,sizeof(int));
+    write(sockfd,serial,sizeof(char)*100);
+    read(sockfd,&command,sizeof(int));
+    if(command == SIG_SUCCESS){
+        read(sockfd,&money,sizeof(int));
+        printf("%dUSD has been deposited\n",money);
+        user.balance += money;
+    } else if(command == SIG_FAIL){
+        printf("Your serial ID is not correct\n");
+    }
+    return 1;
+}
+
+int menu2_option4(){    //Sign out
     int command;
     command = CMD_SIGNOUT;
     printf("%s has logged out!\n",user.name);
