@@ -22,7 +22,6 @@
 #define CMD_HISTORY    3
 #define CMD_BID        4
 #define CMD_SIGNOUT    5
-#define CMD_SIGNOUT    5
 #define CMD_END        6
 #define CMD_WINNER     7
 #define CMD_DEPOSIT    8
@@ -49,7 +48,19 @@ typedef struct{
     int bid_money;
 }LogEntry;
 
+// Administrating
+void importDB();
+void printGoodList();
+void exportDB();
 void enterGoods();
+void editGoods();
+void deleteGoods();
+int chooseAuctionItem();
+int editMenu();
+//void viewHistory();
+//void addHistory(char* username, char* goodsname, int bid);
+
+// Utilities
 int registerUser(User* user);
 User* getUserByName(char *name);
 char* getGoodsinfo();
@@ -62,8 +73,11 @@ int updateUser(User user);
 int writeLog(char *name, char* goods, int price,char* datetime);
 char* replace(char* str,char old, char new);
 int deposit(User user,char* serial);
+int Menu();
 
 Goods goods;    //Goods to auction
+Goods goodslist[100];
+int good_count = 0;     // Total number of goods in DB
 User *users;
 LogEntry logging[500];
 
@@ -75,17 +89,19 @@ int main(){
     int byte_count;     //Number of bytes in the received queue
     int log_number = 0;     //Number of log entries
     int retval;         //return value
-    int auction_state;     //Default = 0, after first person join = 1, 
+    int auction_state;     //Default = 0, after first person join = 1,
                            //during 1st 20s of bid = 2,during 2nd 20s of bid = 3, during 3rd 20s of bid = 4
     int countdown = 60; //timeout countdown
     int user_online = 0;  //number of user online
-    int user_bidding =  0; // number of bidding 
+    int user_bidding =  0; // number of bidding
     int bid_money;      //money that client bid
     User *user;
     fd_set  readfds;    //read file descriptor list
-    fd_set  allfds;     ///all file descriptor list
+    fd_set  allfds;     //all file descriptor list
     struct sockaddr_in server_address;  //Server address and port
     struct timeval timeout; //timeout value
+    int choice = 0;         //Admin menu choice
+
     //Create server socket
     server_sockfd = socket(AF_INET,SOCK_STREAM,0);
     if(server_sockfd == 0){
@@ -108,8 +124,7 @@ int main(){
         close(server_sockfd);
         return -1;
     }
-    //Enter detail of the goods that will be auctioned
-    enterGoods();
+
     users = (User*)malloc(sizeof(User)*FD_SETSIZE);
     for(i = 0; i<FD_SETSIZE; i++){
         strcpy(users[i].name,"");
@@ -117,10 +132,45 @@ int main(){
         users[i].balance = 0;
         users[i].status = STT_OFFLINE;
     }
-    do{
-        printf("\n*****Press Enter to begin the auction*****\n");
+
+    //MAIN MENU SECTION
+main_menu:
+    choice = Menu();
+    switch (choice)
+    {
+        case 1: // Choose item, then start auction
+            importDB();
+            printGoodList();
+            if (chooseAuctionItem() == 0) goto main_menu;
+             do{
+                printf("\n***Press Enter to immediately begin auction, or input 'b' to back to menu***\n");
+                while ( getchar() != '\n' );
+                choice = getchar();
+                if (choice == 'b') goto main_menu;
+             }
+             while(choice!='\n');
+            break;
+        case 2: // Edit item database
+            edit_menu:
+            choice = editMenu();
+            switch (choice)
+            {
+                case 1: enterGoods(); goto edit_menu; break;
+                case 2: editGoods(); goto edit_menu; break;
+                case 3: deleteGoods(); goto edit_menu; break;
+                case 4: goto main_menu;
+            }
+            break;
+        case 3: // View auction history
+            //viewHistory();
+            goto main_menu;
+            break;
+        case 4: // Exit
+            return 0; break;
     }
-    while(getchar()!='\n');
+
+    // END MAIN MENU SECTION
+
     printf("60s countdown to wait for connection\n");
     FD_ZERO(&readfds);
     FD_ZERO(&allfds);
@@ -150,11 +200,11 @@ int main(){
             if(countdown != 0){
                 char line[100];
                 if(auction_state > 0 && (countdown%10 == 0 || countdown == 5)){
-                    sprintf(line,"%d seconds left\n",countdown);
+                    sprintf(line,"\r%d seconds left\n",countdown);
                     broadcast(line);
                 }
                 countdown--;
-                printf("%d\n",countdown);
+                printf("\r%2ds",countdown); fflush(stdout);
             }
             else{
                 char line[100];
@@ -162,17 +212,20 @@ int main(){
                 if(auction_state == 2){
                     countdown = 20;
                     auction_state = 3;
-                    sprintf(line,"%d USD 1st time\n",logging[log_number-1].bid_money);
+                    sprintf(line,"\r%d USD 1st time\n",logging[log_number-1].bid_money);
+                    printf("%s",line);
                     broadcast(line);
                 //Set 3rd countdown
                 } else if(auction_state == 3){
                     countdown = 20;
                     auction_state = 4;
-                    sprintf(line,"%d USD 2nd time\n",logging[log_number-1].bid_money);
+                    sprintf(line,"\r%d USD 2nd time\n",logging[log_number-1].bid_money);
+                    printf("%s",line);
                     broadcast(line);
                 } else if(auction_state == 4){
                     auction_state = 0;
-                    sprintf(line,"%s win %s with %d USD\n",users[logging[log_number-1].client].name, goods.name,logging[log_number-1].bid_money);
+                    sprintf(line,"\r%s win %s with %d USD !\n",users[logging[log_number-1].client].name, goods.name,logging[log_number-1].bid_money);
+                    printf("%s",line);
                     broadcast(line);
                     //Update user balance and log
                     User winner = users[logging[log_number-1].client];
@@ -184,14 +237,16 @@ int main(){
                     //Inform end of this auction
                     broadcastEnd(logging[log_number-1].client);
                     write(logging[log_number-1].client,&winner.balance,sizeof(int));
+                    printf("Auction ended successfully !\n");
+                    goto main_menu;
                 } else {
                     return 0;
                 }
-            }   
+            }
             //Reset timeout value cause it turns 0 after timeout
             timeout.tv_sec = 1;
         }
-        
+
         //When an activity occurs
         for(i=0; i<FD_SETSIZE; i++){
             //Try all possible file descriptor value if it was the one which invoke activity
@@ -201,7 +256,7 @@ int main(){
                     //Accept new client file descriptor and set to file descriptor list
                     client_sockfd = accept(server_sockfd, NULL, NULL);
                     FD_SET(client_sockfd,&allfds);
-                    printf("Client %d connected\n",client_sockfd);
+                    printf("\rClient %d connected\n",client_sockfd);
                 } else {
                     //Get number of byte in the received queue for a connection
                     ioctl(i,FIONREAD,&byte_count);
@@ -209,19 +264,19 @@ int main(){
                     if(byte_count == 0){
                         close(i);
                         FD_CLR(i,&allfds);
-                        printf("Client %d closed\n",i);
+                        printf("\rClient %d closed\n",i);
                         //If user is logged in, remove from array
                         if(strcmp(users[i].name,"")!=0){
-                            printf("Name:%s has logged out\n",users[i].name);       
+                            printf("\rName:%s has logged out\n",users[i].name);
                             strcpy(users[i].name,"");
                             strcpy(users[i].password,"");
                             if(users[i].status == STT_BIDDING){
                                 user_bidding--;
-                                printf("Biding: %d users\n",user_bidding);
+                                printf("\rBiding: %d users\n",user_bidding);
                             }
                             users[i].status = STT_OFFLINE;
                             user_online--;
-                            printf("Online: %d users\n",user_online);
+                            printf("\rOnline: %d users\n",user_online);
                         }
                     } else {
                         //Read command variable from client
@@ -239,7 +294,7 @@ int main(){
                                 strcpy(users[i].password,user->password);
                                 users[i].balance = user->balance;
                                 users[i].status = STT_ONLINE;
-                                printf("Name:%s has logged in\n",users[i].name);
+                                printf("\rName:%s has logged in\n",users[i].name);
                                 command = CMD_REGISTER;
                                 user_online++;
                                 printf("Online: %d users\n",user_online);
@@ -248,24 +303,24 @@ int main(){
                                 write(i,getGoodsinfo(),sizeof(char)*100);
                             }
                          /***********Sign in*************/
-                        } else if(command == CMD_SIGNIN){   
+                        } else if(command == CMD_SIGNIN){
                             user = (User*)malloc(sizeof(User));
                             read(i,user,sizeof(User));
                             if(authenticate(user)!=1){
                                 command = SIG_EXCEPTION;
                                 free(user);
-                                write(i,&command,sizeof(int));  //send command 
+                                write(i,&command,sizeof(int));  //send command
                             } else if(isLoggedIn(user->name)==1){
                                 command = SIG_ALI;
                                 free(user);
                                 write(i,&command,sizeof(int));  //send command
-                            } else {    
+                            } else {
                                 strcpy(users[i].name,user->name);
                                 strcpy(users[i].password,user->password);
                                 users[i].balance = user->balance;
                                 users[i].status = STT_ONLINE;
                                 command = CMD_SIGNIN;
-                                printf("Name:%s has logged in\n",users[i].name);
+                                printf("\rName:%s has logged in\n",users[i].name);
                                 user_online++;
                                 printf("Online: %d users\n",user_online);
                                 write(i,&command,sizeof(int));  //send command
@@ -276,18 +331,18 @@ int main(){
                         } else if(command == CMD_HISTORY){
                             write(i,getHistory(users[i].name),sizeof(char)*300);
                         } else if(command == CMD_SIGNOUT){
-                            printf("Name:%s has logged out\n",users[i].name);
+                            printf("\rName:%s has logged out\n",users[i].name);
                             strcpy(users[i].name,"");
                             strcpy(users[i].password,"");
                             users[i].status = STT_OFFLINE;                        
                             user_online--;
                             printf("Online : %d users\n",user_online);
-                        /**********Join auction*******/    
+                        /**********Join auction*******/
                         } else if(command == CMD_JOIN){
                             //change user status to bidding and update number of bidding users
                             users[i].status = STT_BIDDING;
                             user_bidding++;
-                            printf("%s joins the auction\n",users[i].name);
+                            printf("\r%s joins the auction\n",users[i].name);
                             printf("Biding: %d users\n",user_bidding);
                             //Reset time after first user join auction
                             if(auction_state == 0 && user_bidding == 1){
@@ -315,7 +370,7 @@ int main(){
                                 logging[log_number].client = i;
                                 logging[log_number++].bid_money = bid_money;
                                 auction_state = 2;
-                                sprintf(line,"%s have bid %d USD for %s\n",users[i].name,bid_money,goods.name);
+                                sprintf(line,"\r%s have bid %d USD for %s\n",users[i].name,bid_money,goods.name);
                                 printf("%s",line);
                                 command = CMD_BID;
                                 write(i,&command,sizeof(int));
@@ -347,17 +402,9 @@ int main(){
             }
         }
     }
-    
+
     close(server_sockfd);
     return 0;
-}
-
-void enterGoods(){
-    printf("Enter detail of the goods in this auction\n");
-    printf("Name of the goods: ");      gets(goods.name);
-    printf("Initial price: ");          scanf("%d",&goods.init_price);
-    goods.cur_price = goods.init_price;
-    printf("Minimum increment:");       scanf("%d",&goods.min_incr);
 }
 
 int registerUser(User* user){
@@ -373,64 +420,6 @@ int registerUser(User* user){
     fprintf(file,"%s\t%s\t%d\n",user->name,user->password,user->balance);
     fclose(file);
     return 1;
-}
-
-int authenticate(User *user){
-    User* temp;
-    temp = getUserByName(user->name);
-    if(temp==NULL)  return 0;
-    if(strcmp(user->password,temp->password)==0){
-        user->balance = temp->balance;
-        return 1;
-    }
-    return 0;
-}
-
-void broadcast(char* str){
-    int i;
-    for(i = 0; i<FD_SETSIZE; i++){
-        if(users[i].status == 2){
-            write(i,str,sizeof(char)*100);
-        }
-    }
-}
-
-void broadcastEnd(int winner){
-    int i;
-    int command = CMD_END;
-    char line[100];
-    sprintf(line,"%d",command);
-    for(i = 0; i<FD_SETSIZE; i++){
-        if(users[i].status == 2){
-            if(i!=winner){
-                write(i,line,sizeof(char)*100);
-            }
-            else{
-                command = CMD_WINNER;
-                sprintf(line,"%d",command);
-                write(i,line,sizeof(char)*100);
-                command = CMD_END;
-                sprintf(line,"%d",command);
-            }
-        }
-    }
-}
-
-User* getUserByName(char *name){
-    FILE *file;
-    User* user;
-    if((file = fopen("users.txt","r"))==NULL)  {
-        printf("Error opening file!\n");
-        return NULL;
-    }
-    user = (User*)malloc(sizeof(User));
-    while(fscanf(file,"%s %s %d",user->name,user->password,&user->balance)!= EOF){
-        if(strcmp(user->name,name)==0){
-            return user;
-        }
-    }
-    fclose(file);
-    return NULL;
 }
 
 int updateUser(User user){
@@ -459,6 +448,136 @@ int updateUser(User user){
     fclose(file);
     return 1;
 }
+
+int authenticate(User *user){
+    User* temp;
+    temp = getUserByName(user->name);
+    if(temp==NULL)  return 0;
+    if(strcmp(user->password,temp->password)==0){
+        user->balance = temp->balance;
+        return 1;
+    }
+    return 0;
+}
+
+void broadcastEnd(int winner){
+    int i;
+    int command = CMD_END;
+    char line[100];
+    sprintf(line,"%d",command);
+    for(i = 0; i<FD_SETSIZE; i++){
+        if(users[i].status == 2){
+            if(i!=winner){
+                write(i,line,sizeof(char)*100);
+            }
+            else{
+                command = CMD_WINNER;
+                sprintf(line,"%d",command);
+                write(i,line,sizeof(char)*100);
+                command = CMD_END;
+                sprintf(line,"%d",command);
+            }
+        }
+    }
+}
+
+void broadcast(char* str){
+    int i;
+    for(i = 0; i<FD_SETSIZE; i++){
+        if(users[i].status == 2){
+            write(i,str,sizeof(char)*100);
+        }
+    }
+}
+
+User* getUserByName(char *name){
+    FILE *file;
+    User* user;
+    if((file = fopen("users.txt","r"))==NULL)  {
+        printf("Error opening file!\n");
+        return NULL;
+    }
+    user = (User*)malloc(sizeof(User));
+    while(fscanf(file,"%s %s %d",user->name,user->password,&user->balance)!= EOF){
+        if(strcmp(user->name,name)==0){
+            return user;
+        }
+    }
+    fclose(file);
+    return NULL;
+}
+
+int isLoggedIn(char* name){
+    int i;
+    for(i = 0; i<FD_SETSIZE; i++){
+        if(strcmp(name,users[i].name)==0)
+            return 1;
+    }
+    return 0;
+}
+
+char* getGoodsinfo(){
+    char line[100];
+    sprintf(line,"Goods: %s\nInitial Price: %d USD\nCurrent Price: %d USD\nStep Size: %d USD\n",goods.name,goods.init_price,goods.cur_price,goods.min_incr);
+    return  strdup(line);
+}
+
+int Menu()
+{
+    int choice = 0;
+    printf("**** AUCTION CONTROL MAIN MENU **** ");
+    printf("\n\n");
+    printf("1. Choose item to start auction.\n");
+    printf("2. Edit item database.\n");
+    printf("3. View auction history.\n");
+    printf("4. Exit.\n");
+    printf("\n Your choice (1-4): ");
+    scanf("%d",&choice);
+    while (!((choice >=1)&&(choice <=4)))
+    {
+        printf("\n Invalid choice. Please input a number from 1 to 4: ");
+        scanf("%d",&choice);
+    }
+    return choice;
+}
+
+void importDB()
+{
+    FILE *fi;
+    int n = 0;
+    Goods tmp;
+
+    if((fi = fopen("goods.txt","r"))==NULL)  {
+        printf("Error opening goods file!\n");
+        return;
+    }
+
+    while (fscanf(fi,"%d\t%d\t%s",&tmp.init_price,&tmp.min_incr,tmp.name)>0)
+        {
+            goodslist[n].init_price = tmp.init_price;
+            goodslist[n].min_incr = tmp.min_incr;
+            strcpy(goodslist[n].name, tmp.name);
+            n++;
+        }
+    fclose(fi);
+    good_count = n;
+}
+
+void exportDB()
+{
+    FILE *fo;
+    int i=0;
+    if((fo = fopen("goods.txt","w"))==NULL)  {
+        printf("Error opening goods file!\n");
+        return;
+    }
+
+    for (i=0;i<good_count;i++)
+            fprintf(fo,"%d\t%d\t%s\n",goodslist[i].init_price,goodslist[i].min_incr,goodslist[i].name);
+
+    fclose(fo);
+}
+
 
 int writeLog(char *name, char* goods, int price,char* datetime){
     FILE *file;
@@ -495,19 +614,128 @@ int deposit(User user,char* serial){
     return money;
 }
 
-int isLoggedIn(char* name){
-    int i;
-    for(i = 0; i<FD_SETSIZE; i++){
-        if(strcmp(name,users[i].name)==0)
-            return 1;
-    }
-    return 0;
+void printGoodList()
+{
+    int i=0;
+
+    printf("\n");
+    printf("|-----|------------------------------------|---------------|---------------|\n");
+    printf("| No. |              Item name             |  Start price  | Min increment |\n");
+    printf("|-----|------------------------------------|---------------|---------------|\n");
+    if (good_count < 1)
+    printf("|                        There is no item in database !                    |\n");
+    for (i=0; i<good_count; i++)
+        printf("| %3d | %-34s | %11d   | %11d   |\n",i+1,goodslist[i].name,goodslist[i].init_price,goodslist[i].min_incr);
+    printf("|-----|------------------------------------|---------------|---------------|\n");
 }
 
-char* getGoodsinfo(){
-    char line[100];
-    sprintf(line,"Goods: %s\nInitial Price: %d USD\nCurrent Price: %d USD\nStep Size: %d USD\n",goods.name,goods.init_price,goods.cur_price,goods.min_incr);
-    return  strdup(line);
+int chooseAuctionItem()
+{
+    int k = 0;
+    printf("\n");
+    if (good_count < 1)
+        {
+            printf(" Press add an item to the database first !\n");
+            return 0;
+        }
+
+    printf("    Input No. of item to auction: (1-%d): ",good_count); scanf("%d",&k);
+    while ((k < 1) || (k > good_count))
+    {
+        printf("Invalid item No. Please input a number from 1 to %d : ",good_count);
+        scanf("%d",&k);
+    }
+
+    goods.init_price = goodslist[k-1].init_price;
+    goods.min_incr = goodslist[k-1].min_incr;
+    goods.cur_price = goods.init_price;
+    strcpy(goods.name, goodslist[k-1].name);
+
+    printf("Item '%s' with start price %d$ and minimum increment bid %d$ is selected !\n",goods.name,goods.init_price,goods.min_incr);
+    return 1;
+}
+
+int editMenu()
+{
+    int choice = 0;
+    printf("**** EDITTING ITEM DATABSE **** ");
+    printf("\n\n");
+    printf("1. Add new item.\n");
+    printf("2. Edit item.\n");
+    printf("3. Delete item.\n");
+    printf("4. Back to main menu.\n");
+    printf("\n Your choice (1-4): ");
+    scanf("%d",&choice);
+    while (!((choice >=1)&&(choice <=4)))
+    {
+        printf("\n Invalid choice. Please input a number from 1 to 4: ");
+        scanf("%d",&choice);
+    }
+    return choice;
+}
+
+void enterGoods(){
+    importDB();
+    printf("** Enter detail of new item **\n\n");
+    while ( getchar() != '\n' );
+    printf("Name of the goods: ");      gets(goodslist[good_count].name);
+    printf("Initial price: ");          scanf("%d",&goodslist[good_count].init_price);
+    printf("Minimum increment:");       scanf("%d",&goodslist[good_count].min_incr);
+    good_count ++;
+    exportDB();
+    printf("\nItem added to database successfully !\n");
+    printGoodList();
+}
+
+void editGoods(){
+    importDB();
+    int choice = 0;
+    printGoodList();
+    printf("\n\n");
+    printf("**** Enter No. of the item to edit ****");
+    printf("\n\n");
+    scanf("%d",&choice);
+    while (!((choice >=1)&&(choice <=good_count)))
+    {
+        printf("\n Invalid choice. Please input a number from 1 to %d: ",good_count);
+        scanf("%d",&choice);
+    }
+    printf("\n");
+    while ( getchar() != '\n' );
+    printf("New name of the goods: ");      fgets(goodslist[choice-1].name,50,stdin);
+    printf("New initial price: ");          scanf("%d",&goodslist[choice-1].init_price);
+    printf("New minimum increment:");       scanf("%d",&goodslist[choice-1].min_incr);
+
+    exportDB();
+    printf("\nItem editted successfully !\n");
+    printGoodList();
+}
+
+void deleteGoods(){
+    importDB();
+    int i = 0, choice = 0;
+    printGoodList();
+    printf("\n\n");
+    printf("**** Enter No. of the item to delete ****");
+    printf("\n\n");
+    scanf("%d",&choice);
+    while (!((choice >=1)&&(choice <=good_count)))
+    {
+        printf("\n Invalid choice. Please input a number from 1 to %d: ",good_count);
+        scanf("%d",&choice);
+    }
+    printf("\n");
+    good_count--;
+    for (i = choice-1; i < good_count; i++)
+    {
+        goodslist[i].init_price = goodslist[i+1].init_price;
+        goodslist[i].min_incr = goodslist[i+1].min_incr;
+        strcpy(goodslist[i].name, goodslist[i+1].name);
+    }
+
+    exportDB();
+    printf("\nItem deleted successfully !\n");
+    printGoodList();
 }
 
 char* getHistory(char* user_name){
@@ -546,3 +774,53 @@ char* replace(char* str,char old, char new){
     }
     return str1;
 }
+
+/*
+void viewHistory()
+{
+    FILE *fi;
+    char line[100];
+
+    if((fi = fopen("auctionhistory.txt","r"))==NULL)  {
+        printf("Error opening auction history file!\n");
+        return;
+    }
+
+    printf("\n\n");
+    printf("**** Auction History ****");
+    printf("\n\n");
+
+    while (fgets(line,40,fi)>0)
+    {
+        printf("%s",line);
+    }
+    printf("\n\n");
+    fclose(fi);
+}
+
+void addHistory(char* username, char* goodsname, int bid)
+{
+    time_t current_time;
+    char* c_time_string;
+    FILE *fo;
+
+
+    if((fo = fopen("auctionhistory.txt","a+"))==NULL)  {
+        printf("Error opening auction history file!\n");
+        return;
+    }
+
+    current_time = time(NULL);
+
+    c_time_string = ctime(&current_time);
+    if (c_time_string == NULL)
+       fprintf(fo,"[Unknown time] User '%s' won '%s' with %d$.\n",username,goodsname,bid);
+    else
+        {
+            c_time_string[strlen(c_time_string)-1] = '\0';
+            fprintf(fo,"[%s] User '%s' won '%s' with %d$.\n",c_time_string,username,goodsname,bid);
+        }
+    fclose(fo);
+}
+
+*/
