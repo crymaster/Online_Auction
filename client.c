@@ -30,6 +30,7 @@
 #define STDIN          0
 
 void menu();
+char* getServerIP();
 int menu1_option1();    //Sign in
 int menu1_option2();    //Sign up
 int menu2_option1();    //Get History
@@ -60,7 +61,7 @@ int main(){
     }
     //Server ip address
     address.sin_family = AF_INET;
-    address.sin_addr.s_addr = inet_addr("127.0.0.1");
+    address.sin_addr.s_addr = inet_addr(getServerIP());
     address.sin_port = htons(8888);
 
     retval = connect(sockfd,(struct sockaddr*)&address,sizeof(address));
@@ -228,6 +229,7 @@ int menu2_option1(){    //Join auction
     int  byte_count;
     int  bid_money;
     int  n;
+    int bufferLength = 0;
     int warning = 0;
     fd_set allfds;
     fd_set readfds;
@@ -252,9 +254,10 @@ int menu2_option1(){    //Join auction
         read(sockfd,&price,sizeof(int));
         read(sockfd,line,sizeof(line));
         printf("%s",line);
-        read(sockfd,line,sizeof(line));
-        printf("%s",line);
+        //read(sockfd,line,sizeof(line));
+        //printf("%s",line);
         strcpy(line,"");
+        printf("\n\n");
         printf("\nBid: "); fflush(stdout);
         while(1){
             readfds = allfds;
@@ -285,6 +288,8 @@ int menu2_option1(){    //Join auction
                         }
                     }
                     printf("\nBid: "); fflush(stdout);
+
+
                 }
               //Activity triggered by stdin
             } else if(FD_ISSET(STDIN,&readfds)){
@@ -359,4 +364,20 @@ int menu2_option4(){    //Sign out
     strcpy(user.password,"");
     write(sockfd,&command,sizeof(int));
     return 1;
+}
+
+char* getServerIP()
+{
+    FILE *fi;
+    char IP[17];
+
+    if((fi = fopen("serverIP.txt","r"))==NULL)  {
+        printf("Error opening serverIP file!\n");
+        return NULL;
+    }
+
+    fscanf(fi,"%s",IP);
+    fclose(fi);
+    return strdup(IP);
+
 }

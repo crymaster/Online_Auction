@@ -139,6 +139,7 @@ int MenuChoice()
     while (!((choice >=1)&&(choice <=4)))
     {
         printf("\n Invalid choice. Please input a number from 1 to 4: ");
+        while ( getchar() != '\n' );
         scanf("%d",&choice);
     }
     return choice;
@@ -155,8 +156,10 @@ void importDB()
         return;
     }
 
-    while (fscanf(fi,"%d\t%d\t%s",&tmp.init_price,&tmp.min_incr,tmp.name)>0)
+    while (fscanf(fi,"%d\t%d\t",&tmp.init_price,&tmp.min_incr)>0)
         {
+            fgets(tmp.name,40,fi);
+            tmp.name[strlen(tmp.name)-1]='\0';
             goodslist[n].init_price = tmp.init_price;
             goodslist[n].min_incr = tmp.min_incr;
             strcpy(goodslist[n].name, tmp.name);
@@ -271,6 +274,7 @@ int editMenu()
     while (!((choice >=1)&&(choice <=4)))
     {
         printf("\n Invalid choice. Please input a number from 1 to 4: ");
+        while ( getchar() != '\n' );
         scanf("%d",&choice);
     }
     return choice;
@@ -304,7 +308,7 @@ void editGoods(){
     }
     printf("\n");
     while ( getchar() != '\n' );
-    printf("New name of the goods: ");      fgets(goodslist[choice-1].name,50,stdin);
+    printf("New name of the goods: ");      fgets(goodslist[choice-1].name,50,stdin);   goodslist[choice-1].name[strlen(goodslist[choice-1].name)-1]='\0';
     printf("New initial price: ");          scanf("%d",&goodslist[choice-1].init_price);
     printf("New minimum increment:");       scanf("%d",&goodslist[choice-1].min_incr);
 
@@ -405,6 +409,7 @@ void addHistory(char* username, char* goodsname, int bid)
 {
     time_t current_time;
     char* c_time_string;
+    FILE *fo;
     FILE *fo;
 
 

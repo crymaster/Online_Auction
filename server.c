@@ -56,6 +56,7 @@ int main(){
     FD_ZERO(&allfds);
     //Set server descriptor to descriptor list
     FD_SET(server_sockfd,&allfds);
+    users = (User*)malloc(sizeof(User)*FD_SETSIZE);
 loop:
     // Initial state of auction variables
     isCount = 0;
@@ -63,7 +64,7 @@ loop:
     goods.cur_price = 0;
     goods.min_incr = 0;
     // Menu thread
-    users = (User*)malloc(sizeof(User)*FD_SETSIZE);
+
     //----------------------------------------------
 
     pthread_create(&tid, NULL, menuThread, NULL);
@@ -105,8 +106,8 @@ loop:
             //Countdown
             if(countdown != 0){
                 char line[100];
-                if(auction_state > 0 && (countdown%10 == 0 || countdown == 5) && countdown != 60){
-                    sprintf(line,"\r%d seconds left\n",countdown);
+                if(auction_state > 0 && (countdown%5 == 0) && countdown != 60){
+                    sprintf(line,"\033[F\033[F\r%d seconds left\033[K\n",countdown);
                     broadcast(line);
                 }
                 if (isCount == 1)
@@ -290,16 +291,16 @@ loop:
                                 //Reset time after first user join auction
                                 if(auction_state == 0 && user_bidding == 1){
                                     auction_state = 1;
-                                    printf("Start 60s auction:\n");
+                                    printf("------------------------------------------\n");
                                     countdown = 60;
                                 }
                                 char line[100];
-                                sprintf(line,"%d seconds left\n",countdown);
+                                //sprintf(line,"%d seconds left\n",countdown);
                                 command = CMD_JOIN;
                                 write(i,&command,sizeof(int));
                                 write(i,&goods.cur_price,sizeof(int));
                                 write(i,getGoodsinfo(),sizeof(char)*100);
-                                write(i,line,sizeof(char)*100);
+                                //write(i,line,sizeof(char)*100);
                             }
                             else
                             {
@@ -312,7 +313,7 @@ loop:
                             if(bid_money > users[i].balance){
                                 command = SIG_NEM;                  // Account not having enough money to bid
                                 write(i,&command,sizeof(int));
-                            } else if ((bid_money>= (goods.cur_price+goods.min_incr))||((bid_money == goods.init_price)&&(log_number == 0))){
+                            } else if ((bid_money>= (goods.cur_price+goods.min_incr))||((bid_money >= goods.init_price)&&(log_number == 0))){
                                 char line[100];
                                 //Set current price, logging and auction state
                                 goods.cur_price = bid_money;
