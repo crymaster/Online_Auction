@@ -106,7 +106,7 @@ loop:
             //Countdown
             if(countdown != 0){
                 char line[100];
-                if(auction_state > 0 && (countdown%5 == 0) && countdown != 60){
+                if(auction_state > 0 && (countdown%10 == 0 || countdown == 5) && countdown != 60){
                     sprintf(line,"\033[F\033[F\r%d seconds left\033[K\n",countdown);
                     broadcast(line);
                 }
@@ -122,21 +122,21 @@ loop:
                 if(auction_state == 2){
                     countdown = 20;
                     auction_state = 3;
-                    sprintf(line,"\r ******** %d USD 1st time ! *******\n",goods.cur_price);
+                    sprintf(line,"\r ******** %d USD 1st time ! *******\n\n\n",goods.cur_price);
                     printf("%s",line);
                     broadcast(line);
                 //Set 3rd countdown
                 } else if(auction_state == 3){
                     countdown = 20;
                     auction_state = 4;
-                    sprintf(line,"\r ******** %d USD 2nd time ! *******\n",goods.cur_price);
+                    sprintf(line,"\r ******** %d USD 2nd time ! *******\n\n\n",goods.cur_price);
                     printf("%s",line);
                     broadcast(line);
                 } else if(auction_state == 4){
                     auction_state = 0;
                     if (log_number > 0)
                     {
-                        sprintf(line,"\r ******** %s win %s with %d USD ! ********\n",users[logging[log_number-1].client].name, goods.name,logging[log_number-1].bid_money);
+                        sprintf(line,"\r ******** %s win %s with %d USD ! ********\n\n\n",users[logging[log_number-1].client].name, goods.name,logging[log_number-1].bid_money);
                         printf("%s",line);
                         broadcast(line);
                         //Update user balance and log
@@ -188,7 +188,7 @@ loop:
                         if (isCount ==0 ) { printf("\nYour option (1-4): "); fflush(stdout); }
                         //If user logged out, remove from array
                         if(strcmp(users[i].name,"")!=0){
-                            printf("\rName:%s has logged out\n",users[i].name);
+                            printf("\rUser:%s has logged out\n",users[i].name);
                             if (isCount ==0 ) { printf("\nYour option (1-4): "); fflush(stdout); }
                             strcpy(users[i].name,"");
                             strcpy(users[i].password,"");
@@ -231,7 +231,7 @@ loop:
                                 strcpy(users[i].password,user->password);
                                 users[i].balance = user->balance;
                                 users[i].status = STT_ONLINE;
-                                printf("\rName:%s has logged in\n",users[i].name);
+                                printf("\rUser:%s has logged in\n",users[i].name);
                                 command = CMD_REGISTER;
                                 user_online++;
                                 printf("\rOnline: %d users\n",user_online);
@@ -258,7 +258,7 @@ loop:
                                 users[i].balance = user->balance;
                                 users[i].status = STT_ONLINE;
                                 command = CMD_SIGNIN;
-                                printf("\rName:%s has logged in\n",users[i].name);
+                                printf("\rUser: %s has logged in\n",users[i].name);
                                 user_online++;
                                 printf("Online: %d users\n",user_online);
                                 if (isCount ==0 ) { printf("\nYour option (1-4): "); fflush(stdout); }
@@ -271,7 +271,7 @@ loop:
                             write(i,getHistory(users[i].name),sizeof(char)*1024);
                         /***********Sign out*************/
                         } else if(command == CMD_SIGNOUT){
-                            printf("\rName:%s has logged out\n",users[i].name);
+                            printf("\rUser:%s has logged out\n",users[i].name);
                             strcpy(users[i].name,"");
                             strcpy(users[i].password,"");
                             users[i].status = STT_OFFLINE;
@@ -294,7 +294,7 @@ loop:
                                     printf("------------------------------------------\n");
                                     countdown = 60;
                                 }
-                                char line[100];
+                                //char line[100];
                                 //sprintf(line,"%d seconds left\n",countdown);
                                 command = CMD_JOIN;
                                 write(i,&command,sizeof(int));
@@ -320,7 +320,7 @@ loop:
                                 logging[log_number].client = i;
                                 logging[log_number++].bid_money = bid_money;
                                 auction_state = 2;
-                                sprintf(line,"\r%s have bid %d USD for %s\n",users[i].name,bid_money,goods.name);
+                                sprintf(line,"\r%s had bid %d USD for %s\n\n\n",users[i].name,bid_money,goods.name);
                                 printf("%s",line);
                                 command = CMD_BID;
                                 write(i,&command,sizeof(int));
@@ -331,6 +331,7 @@ loop:
                                 command = SIG_LOWBID;               // Bid less than current price + increment
                                 write(i,&command,sizeof(int));
                             }
+                        /**********Deposit*******/
                         //Add money to balance by searching for serial
                         } else if(command == CMD_DEPOSIT){
                             char serial[100];

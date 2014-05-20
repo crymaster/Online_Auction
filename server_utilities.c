@@ -122,6 +122,7 @@ char* getGoodsinfo(){
     char line[100];
     if (goods.cur_price == 0) sprintf(line,"\n  No auction is being held at the moment.\n");
     else sprintf(line,"  Goods: \t\t%s\n  Initial Price: \t%d USD\n  Current Price: \t%d USD\n  Step Size: \t\t%d USD\n",goods.name,goods.init_price,goods.cur_price,goods.min_incr);
+    line[strlen(line)-1] = '\0';
     return  strdup(line);
 }
 

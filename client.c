@@ -160,7 +160,7 @@ int menu1_option1(){    //Sign in
         printf("\n************************************\n");
         printf("\nGoods for auction at the moment:\n");
         read(sockfd,line,sizeof(char)*100);
-        printf("%s",line);
+        printf("%s\n",line);
         strcpy(user.name,temp.name);
         strcpy(user.password,temp.password);
     }
@@ -203,7 +203,7 @@ int menu1_option2(){    //Sign up
         //receive balance of user
         read(sockfd,&user.balance,sizeof(int));
         read(sockfd,line,sizeof(char)*100);
-        printf("%s\n",line);
+        printf("%s",line);
         strcpy(user.name,temp.name);
         strcpy(user.password,temp.password);
     }
@@ -229,7 +229,6 @@ int menu2_option1(){    //Join auction
     int  byte_count;
     int  bid_money;
     int  n;
-    int bufferLength = 0;
     int warning = 0;
     fd_set allfds;
     fd_set readfds;
