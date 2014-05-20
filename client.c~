@@ -299,7 +299,7 @@ int menu2_option2(){    //Join auction
     return 1;
 }
 
-int menu2_option3(){
+int menu2_option3(){    //Deposit money
     char serial[100];
     int command;
     int money;
