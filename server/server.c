@@ -1,4 +1,3 @@
-#include "server.h"
 #include "server_utilities.h"
 
 Goods goods;            //Goods to auction

@@ -8,10 +8,13 @@ client.o: client.c
 	$(CC) -c -o $@ $< $(CFLAGS)
 
 server.o: server.c
-	$(CC) -c -o $@ $< $(CFLAGS)
+	$(CC) -pthread -c -o $@ $< $(CFLAGS)
 
-server: server.o
-	gcc -o $@ server.o $(CFLAGS)
+server_utilities.o: server_utilities.c
+	$(CC) -c -o $@ $< $(CFLAGS)	
+
+server: server.o server_utilities.o
+	gcc -o $@ server.o server_utilities.o $(CFLAGS)
 	
 client: client.o
 	gcc -o $@ client.o $(CFLAGS)
